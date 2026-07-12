@@ -1,7 +1,11 @@
 name: pulse
+# S/TREND collector heartbeat. GitHub's free scheduler is unreliable (delayed/
+# skipped), so each run self-loops for ~5.5h — one run per cron start covers
+# hours, and multiple daily cron starts + a self-restart make gaps unlikely.
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '5 0,6,12,18 * * *'    # 4 daily start attempts (best-effort)
+    - cron: '35 3,9,15,21 * * *'   # extra staggered starts
   workflow_dispatch:
 
 concurrency:
@@ -11,12 +15,17 @@ concurrency:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 32
+    timeout-minutes: 340
     steps:
-      - name: collect every 5 minutes
+      - name: collect every 5 min for ~5.5h, then re-arm
         run: |
-          for i in $(seq 1 6); do
-            R=$(curl -s --max-time 120 "https://s-trend.vercel.app/api/collect" || echo '{"ok":false,"curl":"fail"}')
-            echo "[$(date -u +%H:%M:%S)Z] $R" | head -c 300; echo
-            if [ "$i" -lt 6 ]; then sleep 300; fi
+          for i in $(seq 1 66); do
+            R=$(curl -s --max-time 120 "https://s-trend.vercel.app/api/collect" || echo '{"curl":"fail"}')
+            echo "[$(date -u +%H:%M:%S)Z #$i] $(echo "$R" | head -c 160)"
+            if [ "$i" -lt 66 ]; then sleep 300; fi
           done
+      - name: re-arm next run (chain, so a missed cron never stalls collection)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pulse --repo ${{ github.repository }} || true
