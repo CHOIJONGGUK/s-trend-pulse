@@ -1,0 +1,22 @@
+name: pulse
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: pulse
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    steps:
+      - name: collect every 5 minutes
+        run: |
+          for i in $(seq 1 6); do
+            R=$(curl -s --max-time 120 "https://s-trend.vercel.app/api/collect" || echo '{"ok":false,"curl":"fail"}')
+            echo "[$(date -u +%H:%M:%S)Z] $R" | head -c 300; echo
+            if [ "$i" -lt 6 ]; then sleep 300; fi
+          done
